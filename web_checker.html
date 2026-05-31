@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>企业术语标准化检查工具</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; color:#1e293b; }
+.editor-area { min-height:350px; font-family:'Menlo','Monaco','Consolas','Courier New',monospace; font-size:14px; line-height:1.8; resize:vertical; outline:none; }
+.editor-area:focus { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,0.1); }
+.violation-item { transition:all .2s; }
+.violation-item:hover { background:#fef2f2; }
+.highlight-bad { background:#fef08a; padding:0 2px; border-radius:2px; cursor:pointer; }
+.highlight-bad:hover { background:#fde047; }
+.highlight-fixed { background:#dcfce7; padding:0 2px; border-radius:2px; }
+.stat-card { transition:all .2s; }
+.stat-card:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,0.05); }
+.issue-tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:500; }
+.issue-replace { background:#dbeafe; color:#2563eb; }
+.issue-forbid { background:#fce7f3; color:#db2777; }
+.issue-uniform { background:#d1fae5; color:#047857; }
+.file-upload-area { border:2px dashed #cbd5e1; border-radius:12px; transition:all .2s; cursor:pointer; }
+.file-upload-area:hover { border-color:#6366f1; background:#f0f0ff; }
+.file-upload-area.dragover { border-color:#6366f1; background:#eef2ff; }
+.scrollbar-thin::-webkit-scrollbar { width:4px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:2px; }
+</style>
+</head>
+<body>
+<nav class="bg-gradient-to-r from-indigo-700 to-purple-700 text-white p-4 shadow-lg">
+  <div class="max-w-7xl mx-auto flex items-center justify-between">
+    <h1 class="text-xl font-bold"><i class="fa fa-check-square-o mr-2"></i>企业术语标准化检查</h1>
+    <div class="flex items-center gap-3 text-sm">
+      <button onclick="loadSample()" class="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"><i class="fa fa-file-text-o mr-1"></i>加载示例</button>
+      <button onclick="clearAll()" class="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20"><i class="fa fa-trash-o mr-1"></i>清空</button>
+    </div>
+  </div>
+</nav>
+
+<div class="max-w-7xl mx-auto p-4">
+  <!-- 统计栏 -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+    <div class="stat-card bg-white rounded-lg shadow-sm p-3 text-center border border-slate-200">
+      <div class="text-2xl font-bold text-indigo-600" id="statTotal">0</div>
+      <div class="text-xs text-slate-500">总检查字符数</div>
+    </div>
+    <div class="stat-card bg-white rounded-lg shadow-sm p-3 text-center border border-slate-200">
+      <div class="text-2xl font-bold text-rose-600" id="statAbnormal">0</div>
+      <div class="text-xs text-slate-500">异常词数</div>
+    </div>
+    <div class="stat-card bg-white rounded-lg shadow-sm p-3 text-center border border-slate-200">
+      <div class="text-2xl font-bold text-emerald-600" id="statFixed">0</div>
+      <div class="text-xs text-slate-500">已修正</div>
+    </div>
+    <div class="stat-card bg-white rounded-lg shadow-sm p-3 text-center border border-slate-200">
+      <div class="text-2xl font-bold text-amber-600" id="statRate">0%</div>
+      <div class="text-xs text-slate-500">修正率</div>
+    </div>
+  </div>
+
+  <!-- 输入方式切换（增加了批量文件Tab） -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-4">
+    <div class="flex border-b border-slate-100">
+      <button id="tabPaste" class="flex-1 px-4 py-3 text-sm font-medium text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50" onclick="switchTab('paste')"><i class="fa fa-edit mr-1"></i>粘贴文本</button>
+      <button id="tabUpload" class="flex-1 px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700" onclick="switchTab('upload')"><i class="fa fa-upload mr-1"></i>上传文件</button>
+      <button id="tabBatch" class="flex-1 px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700" onclick="switchTab('batch')"><i class="fa fa-copy mr-1"></i>批量文件</button>
+      <button id="tabDict" class="flex-1 px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700" onclick="switchTab('dict')"><i class="fa fa-book mr-1"></i>自定义词典</button>
+    </div>
+    <!-- 粘贴文本 -->
+    <div id="pastePanel" class="p-4">
+      <textarea id="editor" class="editor-area w-full p-4 border border-slate-200 rounded-lg" placeholder="在此粘贴需要检查的文本..."></textarea>
+    </div>
+    <!-- 上传文件 -->
+    <div id="uploadPanel" class="p-4 hidden">
+      <div class="file-upload-area p-12 text-center" id="dropArea">
+        <i class="fa fa-cloud-upload text-5xl text-slate-300 mb-4 block"></i>
+        <p class="text-slate-500">拖拽文件到此处，或 <span class="text-indigo-600 font-medium cursor-pointer">点击选择文件</span></p>
+        <p class="text-xs text-slate-400 mt-2">支持 .txt / .md 格式</p>
+        <input type="file" id="fileInput" accept=".txt,.md" class="hidden">
+      </div>
+      <div id="fileInfoPanel" class="hidden mt-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <i class="fa fa-file-text-o text-indigo-600 text-xl"></i>
+            <div>
+              <div id="fileNameDisplay" class="font-medium text-indigo-700"></div>
+              <div id="fileSizeDisplay" class="text-xs text-indigo-500"></div>
+            </div>
+          </div>
+          <button onclick="clearUploadedFile()" class="text-xs bg-white px-3 py-1.5 rounded border border-indigo-300 text-indigo-600 hover:bg-indigo-100"><i class="fa fa-times mr-1"></i>移除</button>
+        </div>
+      </div>
+    </div>
+    <!-- 批量文件上传 -->
+    <div id="batchPanel" class="p-4 hidden">
+      <div class="file-upload-area p-12 text-center" id="batchDropArea">
+        <i class="fa fa-copy text-5xl text-slate-300 mb-4 block"></i>
+        <p class="text-slate-500">拖拽多个文件到此处，或 <span class="text-indigo-600 font-medium cursor-pointer">点击选择多个文件</span></p>
+        <p class="text-xs text-slate-400 mt-2">支持上传多个 .txt / .md 文件同时扫描，最多20个</p>
+        <input type="file" id="batchFileInput" accept=".txt,.md" multiple class="hidden">
+      </div>
+      <div id="batchResultPanel" class="hidden mt-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h4 class="font-medium text-slate-700"><i class="fa fa-list-alt mr-1 text-indigo-500"></i>批量扫描结果</h4>
+          <button onclick="exportBatchReport()" class="text-xs bg-slate-100 px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-200"><i class="fa fa-download mr-1"></i>导出报告</button>
+        </div>
+        <div id="batchFileList" class="space-y-2 max-h-80 overflow-y-auto scrollbar-thin"></div>
+      </div>
+    </div>
+    <!-- 自定义词典导入 -->
+    <div id="dictPanel" class="p-4 hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h4 class="font-medium text-slate-700 mb-2"><i class="fa fa-upload mr-1 text-indigo-500"></i>导入自定义词典</h4>
+          <div class="file-upload-area p-8 text-center" id="dictDropArea">
+            <i class="fa fa-file-text-o text-4xl text-slate-300 mb-3 block"></i>
+            <p class="text-slate-500 text-sm">上传 JSON 或 YAML 格式的词典文件</p>
+            <input type="file" id="dictFileInput" accept=".json,.yaml,.yml" class="hidden">
+          </div>
+          <div class="mt-3 p-3 bg-indigo-50 rounded-lg text-xs text-indigo-700">
+            <p class="font-medium mb-1">格式说明：</p>
+            <p><strong>JSON格式：</strong></p>
+            <pre class="text-xs bg-white p-2 rounded mt-1">{"旧词1":"新词1","旧词2":"新词2"}</pre>
+            <p class="mt-1"><strong>YAML格式：</strong></p>
+            <pre class="text-xs bg-white p-2 rounded mt-1">旧词1: 新词1\n旧词2: 新词2</pre>
+            <p class="mt-2">上传后自动合并到现有词典，相同键会覆盖。</p>
+          </div>
+          <div id="dictImportStatus" class="hidden mt-3"></div>
+        </div>
+        <div>
+          <h4 class="font-medium text-slate-700 mb-2"><i class="fa fa-download mr-1 text-emerald-500"></i>导出当前词典</h4>
+          <div class="space-y-2">
+            <button onclick="exportDictJSON()" class="w-full text-left px-4 py-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 flex items-center gap-3"><i class="fa fa-file-code-o text-indigo-500"></i><span class="text-sm">导出为 JSON 格式</span></button>
+            <button onclick="exportDictYAML()" class="w-full text-left px-4 py-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 flex items-center gap-3"><i class="fa fa-file-text-o text-emerald-500"></i><span class="text-sm">导出为 YAML 格式</span></button>
+            <button onclick="resetCustomDict()" class="w-full text-left px-4 py-3 bg-white border border-red-200 rounded-lg hover:bg-red-50 flex items-center gap-3"><i class="fa fa-trash text-red-400"></i><span class="text-sm text-red-600">重置为默认词典</span></button>
+          </div>
+          <div class="mt-3 p-3 bg-slate-50 rounded-lg text-xs text-slate-500">
+            <p>当前词典共 <strong id="customDictCount">50+</strong> 组术语，其中自定义 <strong id="customDictAdded">0</strong> 组。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="px-4 pb-4">
+      <div class="flex gap-2">
+        <button onclick="checkNow()" class="flex-1 px-4 py-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm font-medium"><i class="fa fa-search mr-1"></i>检查标准术语</button>
+        <button onclick="autoFix()" class="flex-1 px-4 py-2.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-medium"><i class="fa fa-wrench mr-1"></i>一键修正</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 检查结果 -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+      <h3 class="text-sm font-bold text-slate-700"><i class="fa fa-list mr-1 text-rose-500"></i>检查结果</h3>
+      <span class="text-xs text-slate-400" id="resultInfo">等待检查...</span>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-0">
+      <div class="p-4 border-r border-slate-100">
+        <p class="text-xs text-slate-400 mb-2"><i class="fa fa-file-text-o mr-1"></i>标注视图</p>
+        <div id="annotatedView" class="font-mono text-sm leading-relaxed min-h-[200px] max-h-[500px] overflow-y-auto scrollbar-thin p-3 bg-slate-50 rounded-lg whitespace-pre-wrap">
+          <span class="text-slate-400">点击「检查标准术语」查看结果</span>
+        </div>
+      </div>
+      <div class="p-4">
+        <p class="text-xs text-slate-400 mb-2"><i class="fa fa-exclamation-triangle mr-1"></i>违规详情</p>
+        <div id="resultArea" class="max-h-[500px] overflow-y-auto scrollbar-thin space-y-2">
+          <div class="text-center py-12 text-slate-400"><i class="fa fa-check-circle text-4xl mb-3 block text-slate-200"></i><p class="text-sm">检查结果将在此显示</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 术语词典 -->
+  <div class="mt-4 bg-white rounded-xl shadow-sm border border-slate-200">
+    <details>
+      <summary class="px-5 py-3 cursor-pointer text-sm font-bold text-slate-700 hover:bg-slate-50"><i class="fa fa-book mr-1 text-indigo-500"></i>术语词典 (<span id="dictCountDisplay">50+</span> 组)</summary>
+      <div class="px-5 py-3 max-h-[300px] overflow-y-auto scrollbar-thin">
+        <div id="dictView" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs"></div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 术语词典 (50+ 组)
+// ============================================================
+const DEFAULT_DICT = {
+  // ---- 禁用词 -> 推荐词 ----
+  "客户":"用户","乙方":"合作方","甲方":"我方","我方":"我方","贵司":"贵公司","我司":"本公司",
+  "该司":"该公司","贵方":"贵方","本司":"本公司","你司":"贵公司",
+  "买主":"买家","卖主":"卖家","客官":"客户","主顾":"客户",
+  "售后":"售后服务","售前":"售前服务","电邮":"电子邮件","邮箱":"电子邮箱",
+  "网址":"网站地址","链接":"链接地址","网盘":"云存储","在线":"在线",
+  "App":"应用","APP":"应用","软件":"软件","硬件":"硬件",
+  // ---- 统一建议 ----
+  "人机交互":"人机交互","自然语言处理":"自然语言处理","机器学习":"机器学习",
+  "深度学习":"深度学习","人工智能":"人工智能","大数据":"大数据",
+  "物联网":"物联网","区块链":"区块链","云计算":"云计算",
+  "边缘计算":"边缘计算","增强现实":"增强现实","虚拟现实":"虚拟现实",
+  "混合现实":"混合现实","数字孪生":"数字孪生",
+  "订阅":"订阅","付费":"付费","收费":"收费","免费":"免费",
+  "版本":"版本","升级":"升级","更新":"更新","迭代":"迭代",
+  "部署":"部署","上线":"上线","发布":"发布","测试":"测试",
+  "验收":"验收","交付":"交付","运维":"运维","监控":"监控",
+  "安全":"安全","合规":"合规","审计":"审计","权限":"权限",
+  // ---- 英文/缩写规范 ----
+  "AI":"AI","SaaS":"SaaS","PaaS":"PaaS","IaaS":"IaaS",
+  "API":"API","SDK":"SDK","UI":"UI","UX":"UX",
+  "QA":"QA","QC":"QC","R&D":"研发","HR":"人力资源",
+  "KPI":"KPI","OKR":"OKR","ROI":"ROI","CPA":"CPA",
+  // ---- 不推荐用词 -> 推荐 ----
+  "搞":"进行","弄":"处理","整":"整理","干":"执行",
+  "东西":"内容","事儿":"事项","活儿":"任务","把子":"部分",
+  "自个":"自行","大家":"各位","咱们":"我们",
+  // ---- 格式规范 ----
+  "v1.0":"V1.0","v2.0":"V2.0","beta版":"Beta版","alpha版":"Alpha版",
+  "稳定的版本":"稳定版","最新的版本":"最新版",
+  // ---- 敏感词提醒 ----
+  "绝对":"建议避免使用「绝对」","一定":"建议避免使用「一定」",
+  "保证":"建议避免使用「保证」","肯定":"建议避免使用「肯定」",
+  "百分百":"建议避免使用「百分百」","最":"「最」字使用需谨慎",
+  "第一":"「第一」使用需有依据","唯一":"建议避免使用「唯一」"
+};
+
+// 自定义词典存储键
+const CUSTOM_DICT_KEY = 'term_checker_custom_dict';
+
+// 获取当前完整词典（默认 + 自定义覆盖）
+function getMergedDict() {
+  const custom = loadCustomDict();
+  return { ...DEFAULT_DICT, ...custom };
+}
+
+function loadCustomDict() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_DICT_KEY) || '{}'); } catch { return {}; }
+}
+
+function saveCustomDict(dict) {
+  localStorage.setItem(CUSTOM_DICT_KEY, JSON.stringify(dict));
+}
+
+function resetCustomDict() {
+  if (!confirm('确定重置为默认词典？所有自定义词条将被清除。')) return;
+  localStorage.removeItem(CUSTOM_DICT_KEY);
+  renderDict();
+  addToast('已重置为默认词典');
+}
+
+// 导出词典 JSON
+function exportDictJSON() {
+  const dict = getMergedDict();
+  const json = JSON.stringify(dict, null, 2);
+  downloadFile(json, '术语词典_完整版.json', 'application/json');
+  addToast('词典已导出为 JSON');
+}
+
+// 导出词典 YAML
+function exportDictYAML() {
+  const dict = getMergedDict();
+  const yaml = Object.entries(dict).map(([k, v]) => {
+    const key = k.includes(':') || k.includes('#') ? `"${k}"` : k;
+    return `${key}: ${v}`;
+  }).join('\n');
+  downloadFile(yaml, '术语词典_完整版.yaml', 'text/yaml');
+  addToast('词典已导出为 YAML');
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType + ';charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// 状态
+// ============================================================
+let currentViolations = [];
+let currentText = '';
+let fixedCount = 0;
+
+// 批量文件处理结果
+let batchResults = [];
+
+// ============================================================
+// 检查函数
+// ============================================================
+function checkNow() {
+  const text = editor.value;
+  if (!text.trim()) {
+    document.getElementById('resultArea').innerHTML = '<div class="text-center py-12 text-amber-500"><i class="fa fa-warning text-3xl mb-3 block"></i><p class="text-sm">请先输入或上传文本</p></div>';
+    return;
+  }
+  currentText = text;
+  fixedCount = 0;
+
+  const DICT = getMergedDict();
+  const TERM_ENTRIES = Object.entries(DICT);
+  const CHECK_RULES = TERM_ENTRIES
+    .map(([from, to]) => ({ from, to, len: from.length }))
+    .sort((a, b) => b.len - a.len);
+
+  const violations = [];
+  const checked = new Set();
+
+  for (const rule of CHECK_RULES) {
+    if (rule.from === rule.to) continue;
+    const re = new RegExp(rule.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const pos = m.index;
+      if (checked.has(pos)) continue;
+      checked.add(pos);
+
+      const lineNum = text.substring(0, pos).split('\n').length + 1;
+
+      let type = 'replace';
+      if (rule.to.includes('建议避免') || rule.to.includes('需谨慎')) {
+        type = 'forbid';
+      } else if (rule.from === rule.to) {
+        type = 'uniform';
+      }
+
+      violations.push({
+        from: rule.from,
+        to: rule.to,
+        line: lineNum,
+        index: pos,
+        type: type,
+        length: rule.from.length,
+        context: text.substring(Math.max(0, pos - 10), pos + rule.from.length + 10)
+      });
+    }
+  }
+
+  violations.sort((a, b) => a.index - b.index);
+  currentViolations = violations.filter((v, i, arr) => i === 0 || v.index !== arr[i-1].index);
+
+  updateStats(text);
+  renderAnnotated(text);
+  renderViolations(currentViolations);
+  document.getElementById('resultInfo').textContent = `发现 ${currentViolations.length} 个问题`;
+}
+
+function renderAnnotated(text) {
+  const el = document.getElementById('annotatedView');
+  if (currentViolations.length === 0) {
+    el.innerHTML = `<span class="text-emerald-600"><i class="fa fa-check-circle mr-1"></i>未发现术语使用问题</span>`;
+    return;
+  }
+  let annotated = text;
+  const sorted = [...currentViolations].sort((a, b) => b.index - a.index);
+  sorted.forEach(v => {
+    if (v.index >= 0 && v.index < annotated.length) {
+      const before = annotated.substring(0, v.index);
+      const match = annotated.substring(v.index, v.index + v.from.length);
+      const after = annotated.substring(v.index + v.from.length);
+      annotated = before + `<span class="highlight-bad" title="建议改为：${v.to}">${match}</span>` + after;
+    }
+  });
+  el.innerHTML = annotated;
+}
+
+function renderViolations(violations) {
+  const el = document.getElementById('resultArea');
+  if (violations.length === 0) {
+    el.innerHTML = '<div class="text-center py-8"><i class="fa fa-check-circle text-4xl mb-2 block text-emerald-400"></i><p class="text-sm text-emerald-600">未发现术语使用问题</p></div>';
+    return;
+  }
+  el.innerHTML = violations.map((v, i) => {
+    const typeClass = v.type === 'replace' ? 'issue-replace' : v.type === 'forbid' ? 'issue-forbid' : 'issue-uniform';
+    const typeLabel = v.type === 'replace' ? '建议替换' : v.type === 'forbid' ? '谨慎使用' : '统一规范';
+    return `<div class="violation-item p-3 rounded-lg border border-slate-100">
+      <div class="flex items-start justify-between mb-1">
+        <span class="issue-tag ${typeClass}">${typeLabel}</span>
+        <span class="text-xs text-slate-400">L${v.line}</span>
+      </div>
+      <div class="text-sm">
+        <span class="line-through text-red-500">${v.from}</span>
+        <span class="text-slate-400 mx-1">→</span>
+        <span class="text-emerald-600 font-medium">${v.to}</span>
+      </div>
+      <div class="text-xs text-slate-400 mt-1">${v.context}</div>
+      <button onclick="fixOne(${i})" class="text-xs text-indigo-500 hover:text-indigo-700 mt-1"><i class="fa fa-wrench mr-1"></i>修正此项</button>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// 一键修正
+// ============================================================
+function autoFix() {
+  checkNow();
+  if (currentViolations.length === 0) {
+    alert('当前没有需要修正的问题。');
+    return;
+  }
+  let text = currentText;
+  const sorted = [...currentViolations].sort((a, b) => b.index - a.index);
+  let count = 0;
+  sorted.forEach(v => {
+    if (v.type === 'replace' && !v.to.includes('建议避免') && !v.to.includes('需谨慎')) {
+      const from = v.from;
+      const to = v.to;
+      const pos = text.lastIndexOf(from);
+      if (pos >= 0) {
+        text = text.substring(0, pos) + to + text.substring(pos + from.length);
+        count++;
+        fixedCount++;
+      }
+    }
+  });
+  editor.value = text;
+  checkNow();
+  addToast(`已自动修正 ${count} 个问题`);
+  updateStats(editor.value);
+}
+
+function fixOne(index) {
+  const v = currentViolations[index];
+  if (!v) return;
+  if (v.type === 'forbid') {
+    addToast('此为警告项，需人工判断，未自动修改');
+    return;
+  }
+  let text = editor.value;
+  const pos = text.indexOf(v.from);
+  if (pos >= 0) {
+    text = text.substring(0, pos) + v.to + text.substring(pos + v.from.length);
+    editor.value = text;
+    fixedCount++;
+    checkNow();
+    addToast(`已修正：「${v.from}」→「${v.to}」`);
+  }
+}
+
+// ============================================================
+// 统计
+// ============================================================
+function updateStats(text) {
+  const total = text.length;
+  const abnormal = currentViolations.length;
+  const fixed = fixedCount;
+  const rate = abnormal > 0 ? Math.round((fixed / abnormal) * 100) : 100;
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statAbnormal').textContent = abnormal;
+  document.getElementById('statFixed').textContent = fixed;
+  document.getElementById('statRate').textContent = rate + '%';
+}
+
+// ============================================================
+// 示例文本
+// ============================================================
+const SAMPLE_TEXT = `关于某科技公司软件系统升级的通知
+
+各位同事：
+
+我司计划在下周一上线最新版本(v2.0)的人工智能系统。该系统绝对能保证提升50%的工作效率！
+
+新版App的UI界面做了完全重新设计，包括：
+- 人机交互体验优化
+- 大数据分析功能增强
+- 搞了个新的用户权限管理系统
+
+请各团队把验收测试搞完，到时候大家一块儿看看效果。如果有任何问题，请发邮件到我们的邮箱。
+
+特别说明：
+1. 这个是目前最稳定的版本，肯定没问题。
+2. 咱们的SaaS平台将支持边缘计算和物联网设备接入。
+3. 链接地址已更新，请使用新版API对接。
+
+售前团队请做好客户沟通，售后团队准备好技术支持。
+
+注意：深度学习算法的准确率一定是百分百的，这是唯一的选择。
+`;
+
+function loadSample() {
+  editor.value = SAMPLE_TEXT;
+  switchTab('paste');
+  addToast('已加载示例文本');
+  document.getElementById('resultInfo').textContent = '等待检查...';
+  document.getElementById('annotatedView').innerHTML = '<span class="text-slate-400">点击「检查标准术语」查看结果</span>';
+  document.getElementById('resultArea').innerHTML = '<div class="text-center py-12 text-slate-400"><i class="fa fa-check-circle text-4xl mb-3 block text-slate-200"></i><p class="text-sm">检查结果将在此显示</p></div>';
+  ['statTotal','statAbnormal','statFixed'].forEach(id => document.getElementById(id).textContent = '0');
+  document.getElementById('statRate').textContent = '0%';
+}
+
+function clearAll() {
+  if (editor.value && !confirm('确定要清空当前内容吗？')) return;
+  editor.value = '';
+  currentViolations = [];
+  currentText = '';
+  fixedCount = 0;
+  document.getElementById('annotatedView').innerHTML = '<span class="text-slate-400">点击「检查标准术语」查看结果</span>';
+  document.getElementById('resultArea').innerHTML = '<div class="text-center py-12 text-slate-400"><i class="fa fa-check-circle text-4xl mb-3 block text-slate-200"></i><p class="text-sm">检查结果将在此显示</p></div>';
+  document.getElementById('resultInfo').textContent = '等待检查...';
+  ['statTotal','statAbnormal','statFixed'].forEach(id => document.getElementById(id).textContent = '0');
+  document.getElementById('statRate').textContent = '0%';
+}
+
+// ============================================================
+// Tab切换
+// ============================================================
+function switchTab(tab) {
+  ['pastePanel','uploadPanel','batchPanel','dictPanel'].forEach(id => {
+    document.getElementById(id).classList.toggle('hidden', id !== tab + 'Panel');
+  });
+  ['tabPaste','tabUpload','tabBatch','tabDict'].forEach(id => {
+    const isActive = id === 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1);
+    document.getElementById(id).className = isActive
+      ? 'flex-1 px-4 py-3 text-sm font-medium text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50'
+      : 'flex-1 px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700';
+  });
+  if (tab === 'dict') {
+    document.getElementById('customDictCount').textContent = Object.keys(getMergedDict()).length;
+    document.getElementById('customDictAdded').textContent = Object.keys(loadCustomDict()).length;
+  }
+}
+
+// ============================================================
+// 文件上传
+// ============================================================
+const editor = document.getElementById('editor');
+let currentFile = null;
+
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  currentFile = file;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    editor.value = ev.target.result;
+    showFileInfo(file);
+    switchTab('paste');
+    addToast(`已加载文件: ${file.name}`);
+    setTimeout(checkNow, 200);
+  };
+  reader.readAsText(file);
+});
+
+// 文件拖拽
+const dropArea = document.getElementById('dropArea');
+if (dropArea) {
+  dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('dragover'); });
+  dropArea.addEventListener('dragleave', () => dropArea.classList.remove('dragover'));
+  dropArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      currentFile = file;
+      const reader = new FileReader();
+      reader.onload = (ev) => { editor.value = ev.target.result; showFileInfo(file); switchTab('paste'); addToast(`已加载文件: ${file.name}`); setTimeout(checkNow, 200); };
+      reader.readAsText(file);
+    }
+  });
+  dropArea.addEventListener('click', () => document.getElementById('fileInput').click());
+}
+
+function showFileInfo(file) {
+  const panel = document.getElementById('fileInfoPanel');
+  document.getElementById('fileNameDisplay').textContent = file.name;
+  const sizes = ['B', 'KB', 'MB'];
+  let size = file.size;
+  let unitIdx = 0;
+  while (size >= 1024 && unitIdx < sizes.length - 1) { size /= 1024; unitIdx++; }
+  document.getElementById('fileSizeDisplay').textContent = size.toFixed(1) + ' ' + sizes[unitIdx];
+  panel.classList.remove('hidden');
+}
+
+function clearUploadedFile() {
+  document.getElementById('fileInput').value = '';
+  document.getElementById('fileInfoPanel').classList.add('hidden');
+  editor.value = '';
+  currentFile = null;
+  addToast('已移除文件');
+}
+
+// ============================================================
+// 批量文件处理
+// ============================================================
+const batchDropArea = document.getElementById('batchDropArea');
+if (batchDropArea) {
+  batchDropArea.addEventListener('dragover', (e) => { e.preventDefault(); batchDropArea.classList.add('dragover'); });
+  batchDropArea.addEventListener('dragleave', () => batchDropArea.classList.remove('dragover'));
+  batchDropArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    batchDropArea.classList.remove('dragover');
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.txt') || f.name.endsWith('.md')).slice(0, 20);
+    if (files.length > 0) processBatchFiles(files);
+  });
+  batchDropArea.addEventListener('click', () => document.getElementById('batchFileInput').click());
+}
+
+document.getElementById('batchFileInput').addEventListener('change', function(e) {
+  const files = Array.from(e.target.files).slice(0, 20);
+  if (files.length > 0) processBatchFiles(files);
+});
+
+function processBatchFiles(files) {
+  let loaded = 0;
+  batchResults = [];
+
+  function scanFile(file) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result;
+      const DICT = getMergedDict();
+      const TERM_ENTRIES = Object.entries(DICT);
+      const CHECK_RULES = TERM_ENTRIES
+        .map(([from, to]) => ({ from, to, len: from.length }))
+        .sort((a, b) => b.len - a.len);
+
+      const violations = [];
+      const checked = new Set();
+      for (const rule of CHECK_RULES) {
+        if (rule.from === rule.to) continue;
+        const re = new RegExp(rule.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          if (checked.has(m.index)) continue;
+          checked.add(m.index);
+          violations.push({ from: rule.from, to: rule.to });
+        }
+      }
+
+      batchResults.push({
+        name: file.name,
+        size: file.size,
+        violations: violations,
+        textLength: text.length
+      });
+
+      loaded++;
+      if (loaded === files.length) {
+        renderBatchResults();
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  files.forEach(scanFile);
+}
+
+function renderBatchResults() {
+  document.getElementById('batchResultPanel').classList.remove('hidden');
+  const list = document.getElementById('batchFileList');
+
+  list.innerHTML = batchResults.map((r, idx) => {
+    const issueCount = r.violations.length;
+    const statusColor = issueCount === 0 ? 'border-green-300 bg-green-50' : 'border-amber-300 bg-amber-50';
+    const statusIcon = issueCount === 0 ? 'fa-check-circle text-green-500' : 'fa-exclamation-triangle text-amber-500';
+    return `<div class="p-3 rounded-lg border ${statusColor} flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <i class="fa ${statusIcon}"></i>
+        <div>
+          <div class="font-medium text-sm">${r.name}</div>
+          <div class="text-xs text-slate-500">${r.textLength} 字符 | 问题 ${issueCount} 个</div>
+        </div>
+      </div>
+      <button onclick="viewBatchFile(${idx})" class="text-xs text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded border border-indigo-200 hover:bg-indigo-50"><i class="fa fa-eye mr-1"></i>查看</button>
+    </div>`;
+  }).join('');
+
+  const totalIssues = batchResults.reduce((s, r) => s + r.violations.length, 0);
+  addToast(`批量扫描完成：${batchResults.length} 个文件，共发现 ${totalIssues} 个问题`);
+}
+
+function viewBatchFile(idx) {
+  const r = batchResults[idx];
+  if (!r) return;
+  editor.value = '[批量文件预览 - ' + r.name + ']\n\n' + r.violations.map(v => `「${v.from}」→「${v.to}」`).join('\n');
+  switchTab('paste');
+  checkNow();
+  addToast('已加载文件: ' + r.name + ' 的检查结果');
+}
+
+function exportBatchReport() {
+  if (batchResults.length === 0) { addToast('暂无批量扫描结果'); return; }
+  let md = '# 批量术语检查报告\n\n';
+  md += `| 文件名 | 字数 | 问题数 | 主要问题 |\n|------|------|-------|--------|\n`;
+  batchResults.forEach(r => {
+    const issues = [...new Set(r.violations.map(v => v.from))].slice(0, 5).join('、');
+    md += `| ${r.name} | ${r.textLength} | ${r.violations.length} | ${issues || '无'} |\n`;
+  });
+  downloadFile(md, '批量检查报告.md', 'text/markdown');
+  addToast('报告已导出');
+}
+
+// ============================================================
+// 自定义词典导入
+// ============================================================
+const dictDropArea = document.getElementById('dictDropArea');
+if (dictDropArea) {
+  dictDropArea.addEventListener('dragover', (e) => { e.preventDefault(); dictDropArea.classList.add('dragover'); });
+  dictDropArea.addEventListener('dragleave', () => dictDropArea.classList.remove('dragover'));
+  dictDropArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dictDropArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) importDictFile(file);
+  });
+  dictDropArea.addEventListener('click', () => document.getElementById('dictFileInput').click());
+}
+
+document.getElementById('dictFileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (file) importDictFile(file);
+});
+
+function importDictFile(file) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const content = ev.target.result;
+    let imported;
+    try {
+      if (file.name.endsWith('.json')) {
+        imported = JSON.parse(content);
+      } else if (file.name.endsWith('.yaml') || file.name.endsWith('.yml')) {
+        imported = parseYAML(content);
+      } else {
+        addToast('不支持的格式，请上传 JSON 或 YAML 文件');
+        return;
+      }
+
+      if (typeof imported !== 'object' || imported === null || Array.isArray(imported)) {
+        throw new Error('格式错误：需要一个键值对对象');
+      }
+
+      // 验证格式
+      const entries = Object.entries(imported);
+      if (entries.length === 0) {
+        addToast('词典为空，未导入任何条目');
+        return;
+      }
+
+      // 合并到自定义词典
+      const custom = loadCustomDict();
+      let added = 0, updated = 0;
+      entries.forEach(([k, v]) => {
+        if (typeof v !== 'string') return;
+        if (custom[k]) { updated++; } else { added++; }
+        custom[k] = v;
+      });
+      saveCustomDict(custom);
+
+      document.getElementById('dictImportStatus').className = 'mt-3 p-3 bg-emerald-50 rounded-lg text-xs text-emerald-700';
+      document.getElementById('dictImportStatus').innerHTML = `<i class="fa fa-check-circle mr-1"></i>导入成功！新增 ${added} 组，更新 ${updated} 组，共 ${entries.length} 组术语。`;
+      document.getElementById('dictImportStatus').classList.remove('hidden');
+
+      renderDict();
+      document.getElementById('customDictCount').textContent = Object.keys(getMergedDict()).length;
+      document.getElementById('customDictAdded').textContent = Object.keys(custom).length;
+      addToast(`词典导入成功：${entries.length} 组术语`);
+    } catch(e) {
+      document.getElementById('dictImportStatus').className = 'mt-3 p-3 bg-red-50 rounded-lg text-xs text-red-700';
+      document.getElementById('dictImportStatus').innerHTML = `<i class="fa fa-times-circle mr-1"></i>导入失败：${e.message}`;
+      document.getElementById('dictImportStatus').classList.remove('hidden');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// 简易YAML解析器（仅支持键值对格式）
+function parseYAML(content) {
+  const result = {};
+  const lines = content.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('---')) continue;
+    const colonIdx = trimmed.indexOf(':');
+    if (colonIdx === -1) continue;
+    let key = trimmed.substring(0, colonIdx).trim();
+    let value = trimmed.substring(colonIdx + 1).trim();
+    // 移除引号
+    if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) key = key.slice(1, -1);
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+    result[key] = value;
+  }
+  return result;
+}
+
+// ============================================================
+// 术语词典显示
+// ============================================================
+function renderDict() {
+  const DICT = getMergedDict();
+  const TERM_ENTRIES = Object.entries(DICT);
+  const el = document.getElementById('dictView');
+  const grouped = {};
+  TERM_ENTRIES.forEach(([from, to]) => {
+    const key = from === to ? '统一术语' : to.includes('建议避免') || to.includes('需谨慎') ? '慎用词' : '建议替换';
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push({ from, to });
+  });
+  el.innerHTML = Object.entries(grouped).map(([group, items]) => `
+    <div>
+      <p class="font-medium text-slate-600 mb-1 text-xs">${group} (${items.length})</p>
+      <div class="space-y-0.5">
+        ${items.map(i => `<span class="inline-block px-1.5 py-0.5 bg-slate-50 rounded mr-1 mb-1 border border-slate-100">
+          <span class="${i.from === i.to ? '' : 'line-through text-red-400'}">${i.from}</span>
+          ${i.from !== i.to ? `<span class="text-slate-300 mx-0.5">→</span><span class="text-emerald-600">${i.to}</span>` : ''}
+        </span>`).join('')}
+      </div>
+    </div>
+  `).join('');
+  document.getElementById('dictCountDisplay').textContent = TERM_ENTRIES.length + '+';
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function addToast(msg) {
+  const el = document.createElement('div');
+  el.className = 'fixed bottom-6 right-6 bg-slate-800 text-white px-5 py-3 rounded-lg shadow-lg text-sm z-50';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+// ============================================================
+// 事件
+// ============================================================
+editor.addEventListener('paste', () => setTimeout(() => {
+  document.getElementById('resultInfo').textContent = '等待检查...';
+}, 100));
+
+// ============================================================
+// 初始化
+// ============================================================
+renderDict();
+</script>
+</body>
+</html>
